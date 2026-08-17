@@ -1,0 +1,10 @@
+node_modules/
+frontend/
+frontend-dist/
+worker/node_modules/
+worker/.wrangler/
+.DS_Store
+.env
+.dev.vars
+*.log
+coverage/

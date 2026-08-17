@@ -1,19 +1,12 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
+import { createMiddleware } from 'hono/factory';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
-interface Env {
-  ASSETS: Fetcher;
-  DB: D1Database;
-  CACHE: KVNamespace;
-  R2?: R2Bucket;
-  SUB_STORE_CORS_ALLOWED_ORIGINS: string;
-  CACHE_TTL_SECONDS: string;
-  UPSTREAM_REPO: string;
-  UPSTREAM_FRONTEND_REPO: string;
+type Env = Cloudflare.Env & {
   ADMIN_TOKEN?: string;
-}
+};
 
 type SubscriptionRow = {
   id: number;
@@ -38,7 +31,6 @@ type SubscriptionInput = {
   enabled?: boolean;
 };
 
-type AnyContext = { env: Env; req: { header(name: string): string | undefined } };
 const app = new Hono<{ Bindings: Env }>();
 
 const originList = (raw: string) => {
@@ -141,13 +133,18 @@ function renderTarget(target: string, source: string) {
   if (t === 'base64-json') return { body: b64encode(JSON.stringify(parseUriNodes(source))), contentType: 'text/plain; charset=utf-8' };
   return { body: source, contentType: 'text/plain; charset=utf-8' };
 }
-async function admin(c: AnyContext, next: () => Promise<Response>) {
-  if (!c.env.ADMIN_TOKEN) return next();
+const admin = createMiddleware<{ Bindings: Env }>(async (c, next) => {
+  if (!c.env.ADMIN_TOKEN) {
+    await next();
+    return;
+  }
   const auth = c.req.header('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (token !== c.env.ADMIN_TOKEN) throw new HTTPException(401, { message: 'Unauthorized' });
-  return next();
-}
+  if (token !== c.env.ADMIN_TOKEN) {
+    throw new HTTPException(401, { message: 'Unauthorized' });
+  }
+  await next();
+});
 async function fetchSource(env: Env, row: SubscriptionRow) {
   if (row.content) return row.content;
   if (!row.url) return '';

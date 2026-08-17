@@ -64,3 +64,8 @@ wrangler r2 bucket create ...
 ```
 
 The Wrangler configuration intentionally omits account-specific D1/KV IDs and relies on automatic provisioning.
+
+
+## TypeScript runtime types
+
+The Worker now follows Cloudflare's recommended `wrangler types` flow. Do not add `@cloudflare/workers-types` back to `worker/package.json`; `npm run typecheck` generates `worker/worker-configuration.d.ts` from `wrangler.toml` before running `tsc`.

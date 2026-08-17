@@ -1,3 +1,7 @@
+# Sub-Store Cloudflare V2
+
+V2.0.1 hotfix: migrated Worker TypeScript definitions to `wrangler types` and fixed the Hono admin middleware signature for current Hono TypeScript definitions.
+
 # Sub-Store Cloudflare Workers V2
 
 “官方 Sub-Store 前端 + Cloudflare Workers 兼容层 + D1/KV/R2 + GitHub Actions 全自动上游跟踪”。

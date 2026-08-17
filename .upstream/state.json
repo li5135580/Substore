@@ -1,0 +1,14 @@
+{
+  "frontend": {
+    "repo": "sub-store-org/Sub-Store-Front-End",
+    "branch": "main",
+    "sha": ""
+  },
+  "backend": {
+    "repo": "sub-store-org/Sub-Store",
+    "branch": "master",
+    "sha": "",
+    "version": ""
+  },
+  "updatedAt": ""
+}

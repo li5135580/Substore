@@ -7,16 +7,6 @@ on:
 
   workflow_dispatch:
 
-  # 允许 upstream-sync.yml 通过 workflow_dispatch 调用本工作流
-  workflow_call:
-    secrets:
-      CLOUDFLARE_API_TOKEN:
-        required: true
-      CLOUDFLARE_ACCOUNT_ID:
-        required: true
-      SUB_STORE_ADMIN_TOKEN:
-        required: false
-
 permissions:
   contents: read
 
@@ -24,68 +14,98 @@ concurrency:
   group: sub-store-production
   cancel-in-progress: false
 
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "11.0.9"
+
 jobs:
   deploy:
-    name: Build / Provision / Migrate / Deploy
+    name: Build / Test / Provision / Migrate / Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    timeout-minutes: 40
 
     steps:
       # ============================================================
       # 1. Checkout
       # ============================================================
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       # ============================================================
-      # 2. Node.js
+      # 2. Setup Node
       # ============================================================
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
 
       # ============================================================
-      # 3. Verify Cloudflare authentication
+      # 3. Enable Corepack / pnpm
+      # ============================================================
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@${PNPM_VERSION} --activate
+
+      # ============================================================
+      # 4. Verify Cloudflare authentication
       # ============================================================
       - name: Verify Cloudflare authentication
         working-directory: worker
-        run: npx wrangler whoami
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler whoami
 
       # ============================================================
-      # 4. Sync official Sub-Store Front-End
+      # 5. Sync official Sub-Store Front-End
+      #
+      # sync-official-frontend.mjs 会：
+      #   - 自动识别官方默认分支
+      #   - clone 官方 Front-End
+      #   - pnpm install
+      #   - pnpm build
+      #   - 复制到 frontend-dist/
       # ============================================================
-      - name: Sync official Sub-Store Front-End
-        run: node scripts/sync-official-frontend.mjs
+      - name: Sync and build official Sub-Store Front-End
+        run: |
+          node scripts/sync-official-frontend.mjs
 
       # ============================================================
-      # 5. Install root dependencies
+      # 6. Verify frontend assets
       # ============================================================
-      - name: Install root dependencies
-        run: npm install
+      - name: Verify frontend build
+        run: |
+          echo "Checking frontend-dist..."
+
+          if [ ! -d "frontend-dist" ]; then
+            echo "ERROR: frontend-dist directory does not exist."
+            exit 1
+          fi
+
+          if [ ! -f "frontend-dist/index.html" ]; then
+            echo "ERROR: frontend-dist/index.html does not exist."
+            echo "Frontend build appears to have failed."
+            exit 1
+          fi
+
+          echo
+          echo "Frontend assets:"
+          find frontend-dist -maxdepth 2 -type f | head -100
 
       # ============================================================
-      # 6. Install Worker dependencies
+      # 7. Install Worker dependencies
       # ============================================================
       - name: Install Worker dependencies
         working-directory: worker
         run: npm install
 
       # ============================================================
-      # 7. Build official frontend
-      # ============================================================
-      - name: Build official frontend
-        working-directory: frontend
-        run: npm run build
-
-      # ============================================================
-      # 8. Generate Cloudflare Worker runtime types
+      # 8. Generate Cloudflare runtime types
       # ============================================================
       - name: Generate Worker runtime types
         working-directory: worker
@@ -99,60 +119,86 @@ jobs:
         run: npm run typecheck
 
       # ============================================================
-      # 10. Worker contract tests
-      # ============================================================
-      - name: Run Worker contract tests
-        run: npm test
-
-      # ============================================================
-      # 11. Check / automatically provision Cloudflare resources
+      # 10. Run local Worker contract tests
       #
       # IMPORTANT:
-      # - D1
-      # - KV
-      # - R2
+      # frontend-dist MUST already exist here.
+      # ============================================================
+      - name: Start local Worker and run contract tests
+        run: |
+          node scripts/test-worker.mjs
+
+      # ============================================================
+      # 11. Verify Cloudflare resource configuration
+      # ============================================================
+      - name: Verify Cloudflare resource configuration
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "=============================================="
+          echo "Cloudflare D1"
+          echo "=============================================="
+          npx wrangler d1 list
+
+          echo
+          echo "=============================================="
+          echo "Cloudflare KV"
+          echo "=============================================="
+          npx wrangler kv namespace list
+
+          echo
+          echo "=============================================="
+          echo "Cloudflare R2"
+          echo "=============================================="
+          npx wrangler r2 bucket list || true
+
+      # ============================================================
+      # 12. Provision resources + first Worker deployment
       #
-      # are declared in wrangler.toml without account-specific IDs.
+      # This MUST happen BEFORE D1 migration.
       #
-      # Wrangler 4.45+ supports automatic provisioning.
-      # We explicitly enable it here.
+      # Wrangler will create missing:
+      #   - D1
+      #   - KV
+      #   - R2
       # ============================================================
       - name: Provision Cloudflare resources and deploy Worker
         working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "=============================================="
-          echo "Cloudflare resource provisioning"
+          echo "Provisioning Cloudflare resources"
           echo "=============================================="
 
           npx wrangler deploy \
             --experimental-provision \
             --yes
 
-          echo "=============================================="
-          echo "Initial Worker deployment completed"
-          echo "=============================================="
-
       # ============================================================
-      # 12. Verify D1 exists after provisioning
+      # 13. Verify D1 exists
       # ============================================================
       - name: Verify D1 database
         working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          echo "Available D1 databases:"
-          npx wrangler d1 list
+          echo "Checking D1 binding DB..."
 
-          echo
-          echo "Checking binding: DB"
           npx wrangler d1 info DB
 
       # ============================================================
-      # 13. Apply D1 migrations
-      #
-      # At this point the database must already exist because
-      # wrangler deploy provisioned it.
+      # 14. Apply remote D1 migrations
       # ============================================================
       - name: Apply D1 migrations
         working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "=============================================="
           echo "Applying D1 migrations"
@@ -160,60 +206,60 @@ jobs:
 
           npx wrangler d1 migrations apply DB \
             --remote \
-            --experimental-provision
+            --yes
 
       # ============================================================
-      # 14. Optional ADMIN_TOKEN
-      #
-      # ADMIN_TOKEN is not put into wrangler.toml.
-      # This step only runs when GitHub Secret exists.
-      #
-      # If your current Worker does not require an ADMIN_TOKEN,
-      # this step can be removed.
+      # 15. Configure optional ADMIN_TOKEN
       # ============================================================
       - name: Configure ADMIN_TOKEN
         if: ${{ secrets.SUB_STORE_ADMIN_TOKEN != '' }}
         working-directory: worker
-        run: |
-          printf '%s' "${SUB_STORE_ADMIN_TOKEN}" \
-            | npx wrangler secret put ADMIN_TOKEN
         env:
-          SUB_STORE_ADMIN_TOKEN: ${{ secrets.SUB_STORE_ADMIN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_TOKEN: ${{ secrets.SUB_STORE_ADMIN_TOKEN }}
+        run: |
+          printf '%s' "$ADMIN_TOKEN" \
+            | npx wrangler secret put ADMIN_TOKEN
 
       # ============================================================
-      # 15. Final Worker deployment
-      #
-      # This guarantees the Worker receives any secret/config changes
-      # after migration.
+      # 16. Final deployment
       # ============================================================
       - name: Final Worker deployment
         working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npx wrangler deploy \
             --experimental-provision \
             --yes
 
       # ============================================================
-      # 16. Show deployment information
+      # 17. Show deployment information
       # ============================================================
-      - name: Show Worker deployment information
+      - name: Show deployment information
         working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "=============================================="
-          echo "Deployment completed"
+          echo "Deployment completed successfully"
           echo "=============================================="
 
           npx wrangler deployments list
 
       # ============================================================
-      # 17. Upload useful logs / generated files
+      # 18. Upload diagnostics
       # ============================================================
-      - name: Upload deployment diagnostics
+      - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sub-store-deployment-diagnostics
           path: |
+            frontend-dist/
             worker/worker-configuration.d.ts
           if-no-files-found: ignore
           retention-days: 7

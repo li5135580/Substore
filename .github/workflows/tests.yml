@@ -1,0 +1,31 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm install
+
+      - name: Typecheck
+        working-directory: worker
+        run: npm run typecheck
+
+      - name: Run Worker contract tests
+        run: node scripts/test-worker.mjs

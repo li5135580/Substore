@@ -1,70 +1,35 @@
 name = "sub-store-cloudflare"
 main = "src/index.ts"
-
 compatibility_date = "2026-08-17"
 compatibility_flags = ["nodejs_compat"]
-
 workers_dev = true
-
-# ============================================================
-# Static Assets
-# ============================================================
 
 [assets]
 directory = "../frontend-dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# ============================================================
-# Environment Variables
-# ============================================================
-
 [vars]
 SUB_STORE_CORS_ALLOWED_ORIGINS = "*"
 CACHE_TTL_SECONDS = "900"
-
 UPSTREAM_REPO = "https://github.com/sub-store-org/Sub-Store"
 UPSTREAM_FRONTEND_REPO = "https://github.com/sub-store-org/Sub-Store-Front-End"
 
-# ============================================================
-# D1
-#
-# Do NOT manually specify database_id.
-# Wrangler automatic provisioning handles it.
-# ============================================================
-
+# Automatic provisioning:
+# Do not specify account-specific resource IDs here.
+# For R2, also omit bucket_name so Wrangler can create the bucket.
 [[d1_databases]]
 binding = "DB"
-database_name = "sub-store-db"
 migrations_dir = "migrations"
-
-# ============================================================
-# KV
-# ============================================================
 
 [[kv_namespaces]]
 binding = "CACHE"
 
-# ============================================================
-# R2
-# ============================================================
-
 [[r2_buckets]]
 binding = "R2"
-bucket_name = "sub-store-assets"
-
-# ============================================================
-# Cron
-# ============================================================
 
 [triggers]
-crons = [
-  "*/30 * * * *"
-]
-
-# ============================================================
-# Observability
-# ============================================================
+crons = ["*/30 * * * *"]
 
 [observability]
 enabled = true

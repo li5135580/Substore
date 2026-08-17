@@ -5,8 +5,14 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "skipLibCheck": true,
-    "types": ["./worker-configuration.d.ts", "node"],
+    "types": [
+      "./worker-configuration.d.ts",
+      "node"
+    ],
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
+  "include": [
+    "src/**/*.ts",
+    "worker-configuration.d.ts"
+  ]
 }

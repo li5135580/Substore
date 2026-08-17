@@ -1,21 +1,22 @@
 {
   "name": "sub-store-cloudflare-worker",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "typecheck": "wrangler types && tsc --noEmit",
     "test": "node ../tests/contract.mjs",
     "dev": "wrangler dev",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+    "deploy": "wrangler deploy --experimental-provision --yes",
+    "migrate": "wrangler d1 migrations apply DB --remote"
   },
   "dependencies": {
-    "hono": "^4.9.7",
-    "yaml": "^2.8.1"
+    "hono": "4.12.33",
+    "yaml": "2.8.1"
   },
   "devDependencies": {
-    "@types/node": "^24.3.1",
-    "typescript": "^5.9.2",
-    "wrangler": "^4.123.0"
+    "@types/node": "24.3.1",
+    "typescript": "5.9.2",
+    "wrangler": "4.123.0"
   }
 }

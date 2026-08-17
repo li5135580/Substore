@@ -1,0 +1,61 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '11.0.9'
+
+jobs:
+  worker:
+    name: Frontend + Worker Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Sync and build official Sub-Store Front-End
+        env:
+          PNPM_VERSION: ${{ env.PNPM_VERSION }}
+        run: node scripts/sync-official-frontend.mjs
+
+      - name: Verify frontend assets
+        run: |
+          test -d frontend-dist
+          test -f frontend-dist/index.html
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm install
+
+      - name: Generate Worker runtime types
+        working-directory: worker
+        run: npx wrangler types
+
+      - name: TypeScript typecheck
+        working-directory: worker
+        run: npm run typecheck
+
+      - name: Run local Worker contract tests
+        run: node scripts/test-worker.mjs

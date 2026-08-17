@@ -4,7 +4,7 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "wrangler types && tsc --noEmit",
     "test": "node ../tests/contract.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"

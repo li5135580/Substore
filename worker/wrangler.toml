@@ -29,7 +29,7 @@ binding = "CACHE"
 binding = "R2"
 
 [triggers]
-crons = ["*/30 * * * *"]
+crons = ["*/5 * * * *"]
 
 [observability]
 enabled = true

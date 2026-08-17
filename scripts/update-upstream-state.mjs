@@ -15,8 +15,8 @@ if (result.backendChanged && compatibility && !compatibility.compatible) {
 }
 
 const state = {
-  frontend: { repo: 'sub-store-org/Sub-Store-Front-End', branch: 'main', sha: result.frontendSha },
-  backend: { repo: 'sub-store-org/Sub-Store', branch: 'master', sha: result.backendSha, version: result.backendVersion },
+  frontend: { repo: 'sub-store-org/Sub-Store-Front-End', branch: result.frontendBranch || 'master', sha: result.frontendSha },
+  backend: { repo: 'sub-store-org/Sub-Store', branch: result.backendBranch || 'master', sha: result.backendSha, version: result.backendVersion },
   updatedAt: result.checkedAt,
 };
 writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n');

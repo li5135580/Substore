@@ -7,7 +7,7 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const checkout = resolve(root, 'frontend');
 const output = resolve(root, 'frontend-dist');
 const repo = process.env.FRONTEND_REPO || 'https://github.com/sub-store-org/Sub-Store-Front-End.git';
-const ref = process.env.FRONTEND_REF || 'main';
+const ref = process.env.FRONTEND_REF || '';
 const pnpmVersion = process.env.PNPM_VERSION || '11.0.9';
 
 function run(command, args, cwd = root) {
@@ -16,7 +16,10 @@ function run(command, args, cwd = root) {
 
 rmSync(checkout, { recursive: true, force: true });
 rmSync(output, { recursive: true, force: true });
-run('git', ['clone', '--depth', '1', '--branch', ref, repo, checkout]);
+const cloneArgs = ['clone', '--depth', '1'];
+if (ref) cloneArgs.push('--branch', ref);
+cloneArgs.push(repo, checkout);
+run('git', cloneArgs);
 run('corepack', ['enable']);
 run('corepack', ['prepare', `pnpm@${pnpmVersion}`, '--activate']);
 run('pnpm', ['install', '--frozen-lockfile'], checkout);
@@ -30,4 +33,4 @@ cpSync(dist, output, { recursive: true });
 let sha = '';
 try { sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(); } catch {}
 writeFileSync(resolve(output, '.upstream-frontend-sha'), `${sha}\n`);
-console.log(`Official frontend ${sha || ref} synced to ${output}`);
+console.log(`Official frontend ${sha || 'default-branch'} synced to ${output}`);

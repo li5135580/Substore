@@ -15,9 +15,13 @@ async function getJson(url) {
   return res.json();
 }
 
-const fe = await getJson('https://api.github.com/repos/sub-store-org/Sub-Store-Front-End/commits/main');
-const be = await getJson('https://api.github.com/repos/sub-store-org/Sub-Store/commits/master');
-const bePkgRes = await fetch('https://raw.githubusercontent.com/sub-store-org/Sub-Store/master/backend/package.json', { headers: { 'user-agent': headers['user-agent'] } });
+const feRepo = await getJson('https://api.github.com/repos/sub-store-org/Sub-Store-Front-End');
+const beRepo = await getJson('https://api.github.com/repos/sub-store-org/Sub-Store');
+const feBranch = feRepo.default_branch;
+const beBranch = beRepo.default_branch;
+const fe = await getJson(`https://api.github.com/repos/sub-store-org/Sub-Store-Front-End/commits/${encodeURIComponent(feBranch)}`);
+const be = await getJson(`https://api.github.com/repos/sub-store-org/Sub-Store/commits/${encodeURIComponent(beBranch)}`);
+const bePkgRes = await fetch(`https://raw.githubusercontent.com/sub-store-org/Sub-Store/${encodeURIComponent(beBranch)}/backend/package.json`, { headers: { 'user-agent': headers['user-agent'] } });
 if (!bePkgRes.ok) throw new Error(`backend/package.json HTTP ${bePkgRes.status}`);
 const bePkg = JSON.parse(await bePkgRes.text());
 
@@ -34,6 +38,8 @@ const result = {
   backendFirstRun: !state.backend.sha,
   frontendSha: fe.sha,
   backendSha: be.sha,
+  frontendBranch: feBranch,
+  backendBranch: beBranch,
   backendVersion: bePkg.version || '',
   changed,
   checkedAt: new Date().toISOString(),

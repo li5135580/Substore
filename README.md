@@ -102,3 +102,7 @@ tests/
 The official backend is intentionally **not** copied into this Worker. The workflow tracks its branch/commit and package version, compares changed files, and gates production deployment when runtime-sensitive Node.js components change. This avoids silently deploying incompatible Node.js code to the Workers runtime.
 
 A compatible upstream backend change currently causes a redeploy of the Workers compatibility layer, but does not magically port new Node.js backend features. A new feature that requires Node-only APIs must be implemented in `worker/src/` explicitly; the workflow will open/update an issue instead of silently breaking production.
+
+## 自动上游同步
+
+官方前端和官方后端分支均不写死。GitHub Actions 通过 GitHub API 读取两个官方仓库当前的 `default_branch`，因此不会因为官方将默认分支从 `master`/`main` 调整而导致克隆失败。当前官方 Front-End 默认分支为 `master`。

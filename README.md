@@ -1,139 +1,104 @@
-# Sub-Store + Cloudflare Workers
+# Sub-Store Cloudflare Workers V2
 
-这是一个 GitHub 可部署的 Cloudflare Workers 版本仓库模板：
+“官方 Sub-Store 前端 + Cloudflare Workers 兼容层 + D1/KV/R2 + GitHub Actions 全自动上游跟踪”。
 
-- 前端：构建时自动拉取官方 `sub-store-org/Sub-Store-Front-End`，不 fork、不修改官方 UI 源码。
-- 后端：Cloudflare Workers + Hono。
-- 数据库：Cloudflare D1。
-- 缓存：Cloudflare KV。
-- 对象存储：Cloudflare R2（可选）。
-- 定时任务：Workers Cron。
-- 部署：GitHub Actions + Wrangler。
+## 目标
 
-## 重要兼容性说明
+- 每次部署都从官方 `Sub-Store-Front-End` 拉取最新源码并构建，不在本仓库复制官方前端源码。
+- 定时检查官方 `Sub-Store` 后端与前端的上游 HEAD。
+- 上游前端变化：自动构建、测试并部署。
+- 上游后端变化：自动做兼容性扫描与 Worker 合约测试；如果发现 Node 专属运行时变化，自动停止生产部署并创建/更新 GitHub Issue；不会把官方 Node.js backend 直接塞进 Workers。
+- Cloudflare Workers 自动供应 D1/KV/R2 绑定；GitHub Actions 不需要先执行 `wrangler d1 create` / `kv namespace create` / `r2 bucket create`。
+- D1 migrations 使用 binding `DB`，首次部署在资源供应后执行 migration。
+- Worker 同时提供静态前端和 API，默认单域名部署。
 
-官方 Sub-Store 后端目前是 Node.js/Express，并包含 Node 专用依赖；本项目不是把官方 Node backend 强行运行在 Workers 中，而是实现一个 Workers 原生兼容层。
+## 重要事实
 
-因此，本仓库当前直接实现的是：健康检查、环境信息、持久化存储、订阅 CRUD、远程订阅抓取、基础节点 URI/Clash YAML 解析、通用 `/download/:name` 输出以及文件接口基础能力。复杂的官方转换器、代理链、Node 专用脚本运行时和全部历史 API 尚未宣称 100% 兼容。
+官方 backend 当前仍是 Node.js/Express，并使用 `cron`、`fetch-socks`、`http-proxy-middleware` 等 Node 生态能力，因此 V2 使用“上游跟踪 + Workers 兼容层”而不是伪装成官方 backend 的 1:1 运行时移植。
 
-官方文档确认前端可以通过 `?api=...` 指定后端，例如本地前端可用 `?api=http://127.0.0.1:3001/123`；因此本项目把 API 做在同一个 Worker 域名下，以便后续兼容扩展。官方后端也具有 CORS allowlist 与 `/api/storage` 等接口。参考：
+## GitHub Secrets
 
-- https://github.com/sub-store-org/Sub-Store
-- https://github.com/sub-store-org/Sub-Store-Front-End
-- https://github.com/sub-store-org/Sub-Store/wiki/链接参数说明
+只需要：
 
-## 仓库结构
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
 
-```text
-sub-store-cloudflare/
-├── .github/workflows/deploy.yml
-├── scripts/sync-official-frontend.mjs
-├── worker/
-│   ├── migrations/0001_init.sql
-│   ├── src/index.ts
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── wrangler.toml
-├── .gitignore
-└── README.md
-```
+API Token 至少需要允许当前账户部署 Workers，并管理 D1/KV/R2（用于 Wrangler 自动供应资源）。
 
-## 第一次部署
+可选：
 
-### 1. 创建 Cloudflare 资源
+- `SUB_STORE_ADMIN_TOKEN`：Worker 管理 API 的 Bearer Token；设置后 GitHub Actions 会自动执行 `wrangler secret put ADMIN_TOKEN`。
 
-```bash
-npx wrangler login
-npx wrangler d1 create sub-store-db
-npx wrangler kv namespace create SUB_STORE_CACHE
-npx wrangler r2 bucket create sub-store-assets
-```
+## 首次部署
 
-把命令返回的 D1 database_id 和 KV id 填入 `worker/wrangler.toml`。
+1. 上传整个仓库到 GitHub。
+2. 设置上述 Cloudflare Secrets。
+3. 推送到 `main`，或在 Actions 手动运行 `Deploy`。
+4. Wrangler 根据 `worker/wrangler.toml` 自动供应绑定资源。
+5. GitHub Actions 执行 D1 migrations。
+6. Worker 上线并同时托管 `frontend-dist/`。
 
-R2 是可选的；若暂时不用，可以删除 R2 binding。
+自动资源供应目前由 Wrangler 支持 D1、KV、R2；该功能仍属于 beta，因此建议生产账户保留 Cloudflare dashboard 作为资源核查入口。
 
-### 2. 本地安装
+## 自动同步节奏
 
-```bash
-cd worker
-npm install
-npx wrangler d1 migrations apply sub-store-db --remote
-npm run deploy
-```
+`.github/workflows/upstream-sync.yml` 默认每 30 分钟运行一次，也支持手动运行。
 
-### 3. GitHub Actions
+执行：
 
-在 GitHub 仓库 Settings → Secrets and variables → Actions 中创建：
+1. 查询官方前端 HEAD。
+2. 查询官方 backend HEAD。
+3. 对比 `.upstream/state.json`。
+4. 前端有变化：同步并执行完整构建/测试/部署。
+5. backend 有变化：下载上游 `backend/package.json` 与 changed-files 清单，运行兼容性扫描与 Worker 合约测试。
+6. 若通过：更新 `.upstream/state.json` 并部署当前 Worker 兼容层。
+7. 若失败：不部署生产，并创建/更新 GitHub Issue `upstream-incompatible`。
+
+## 目录
 
 ```text
-CLOUDFLARE_API_TOKEN
-CLOUDFLARE_ACCOUNT_ID
+.github/workflows/
+  deploy.yml
+  upstream-sync.yml
+  tests.yml
+.upstream/state.json
+scripts/
+  check-upstream.mjs
+  sync-official-frontend.mjs
+  test-worker.mjs
+worker/
+  src/index.ts
+  migrations/0001_init.sql
+  package.json
+  tsconfig.json
+  wrangler.toml
+tests/
+  contract.mjs
 ```
 
-Cloudflare API Token 至少需要 Workers Scripts/Edit、Workers Routes/Edit（使用自定义域名时）以及 D1 Edit/KV Edit/R2 Edit（取决于你的部署方式）。
+## 当前 Worker 兼容层
 
-然后推送到 `main`，GitHub Actions 会：
+提供：
 
-1. 拉取官方 Sub-Store Front-End；
-2. 构建官方前端；
-3. 复制到 Worker 静态资源目录；
-4. 执行 D1 migration；
-5. 部署 Worker。
+- `/api/health`
+- `/health`
+- `/api/utils/env`
+- `/api/utils/testJSON`
+- `/api/utils/testText`
+- `/api/storage` GET/POST
+- `/api/subscriptions` GET/POST
+- `/api/subscriptions/:name` GET/PUT/DELETE
+- `/download/:name`
+- 基础远程订阅抓取
+- Raw / JSON / Clash / Mihomo 基础输出
+- KV 缓存
+- D1 持久化
+- Cron 健康巡检/缓存清理
 
-## 自定义域名
+这个兼容层不是官方 backend 的完整功能替代；复杂脚本运行、SOCKS 代理链、所有官方转换器和 Node-only API 需要继续逐项迁移。
 
-推荐在 Cloudflare Dashboard 中把：
+## What “automatic backend sync” means in V2
 
-```text
-sub.example.com
-```
+The official backend is intentionally **not** copied into this Worker. The workflow tracks its branch/commit and package version, compares changed files, and gates production deployment when runtime-sensitive Node.js components change. This avoids silently deploying incompatible Node.js code to the Workers runtime.
 
-绑定为 Worker Custom Domain。这样最终：
-
-```text
-https://sub.example.com/
-https://sub.example.com/api/health
-https://sub.example.com/download/demo
-```
-
-根路径首次访问会自动补上官方前端支持的 `?api=<当前 Worker origin>` 参数，因此前端与 Worker API 使用同一域名。官方文档明确展示了 `?api=...` 的后端指定方式。
-
-都由同一个 Worker 提供。
-
-## 订阅接口示例
-
-创建订阅：
-
-```bash
-curl -X POST "https://sub.example.com/api/subscriptions" \
-  -H "content-type: application/json" \
-  -d '{
-    "name":"demo",
-    "url":"https://example.com/sub.txt",
-    "target":"raw",
-    "userAgent":"ClashMeta"
-  }'
-```
-
-访问：
-
-```text
-https://sub.example.com/download/demo
-```
-
-指定目标：
-
-```text
-https://sub.example.com/download/demo?target=clash
-```
-
-按照官方 Wiki，Sub-Store 下载链接支持 `target`、`url`、`content`、`ua` 等运行时参数；本仓库逐步兼容这些参数。详见官方 Wiki。
-
-## 安全建议
-
-不要把 Cloudflare API Token、D1 数据库密钥或管理密钥写入 Git。
-
-生产环境建议把管理接口增加 `ADMIN_TOKEN`，并限制 CORS 到你的前端域名。
-
-如果公开分享 `/download/*`，任何知道链接的人都可以读取对应订阅内容；敏感订阅建议使用随机名称/Token。
+A compatible upstream backend change currently causes a redeploy of the Workers compatibility layer, but does not magically port new Node.js backend features. A new feature that requires Node-only APIs must be implemented in `worker/src/` explicitly; the workflow will open/update an issue instead of silently breaking production.

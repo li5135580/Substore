@@ -61,7 +61,6 @@ jobs:
         if: success() && (steps.upstream.outputs.frontend_changed == 'true' || steps.upstream.outputs.frontend_first_run == 'true' || steps.upstream.outputs.backend_changed == 'true' || steps.upstream.outputs.backend_first_run == 'true')
         env:
           FRONTEND_REPO: https://github.com/sub-store-org/Sub-Store-Front-End.git
-          FRONTEND_REF: main
           PNPM_VERSION: ${{ env.PNPM_VERSION }}
         run: corepack enable && node scripts/sync-official-frontend.mjs
 

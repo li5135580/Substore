@@ -179,12 +179,27 @@ async function saveSubscription(env: Env, input: SubscriptionInput) {
 
 app.get('/api/health', (c) => c.json({ ok: true, service: 'sub-store-cloudflare', runtime: 'cloudflare-workers', version: '2.0.0', timestamp: now() }));
 app.get('/health', (c) => c.json({ ok: true, service: 'sub-store-cloudflare', timestamp: now() }));
-app.get('/api/utils/env', (c) => c.json({
-  backend: 'CloudflareWorkers',
-  version: '2.0.0',
-  feature: { d1: true, kv: true, r2: Boolean(c.env.R2), cron: true, basicSubscription: true },
-  meta: { runtime: 'cloudflare-workers', officialFrontendRepo: c.env.UPSTREAM_FRONTEND_REPO, officialBackendRepo: c.env.UPSTREAM_REPO },
-}));
+app.get('/api/utils/env', (c) => {
+  return c.json({
+    status: 'success',
+    backend: 'CloudflareWorkers',
+    version: '2.1.0',
+    feature: {
+      d1: true,
+      kv: true,
+      r2: true,
+      cron: true,
+      basicSubscription: true,
+    },
+    meta: {
+      runtime: 'cloudflare-workers',
+      officialFrontendRepo:
+        'https://github.com/sub-store-org/Sub-Store-Front-End',
+      officialBackendRepo:
+        'https://github.com/sub-store-org/Sub-Store',
+    },
+  });
+});
 app.get('/api/utils/testJSON', (c) => c.json({ ok: true }));
 app.get('/api/utils/testText', (c) => c.text('ok'));
 

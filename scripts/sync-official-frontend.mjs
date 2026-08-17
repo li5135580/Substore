@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const checkout = resolve(root, 'frontend');
 const output = resolve(root, 'frontend-dist');
+// 默认使用官方仓库，可通过环境变量 FRONTEND_REPO 覆盖
 const repo = process.env.FRONTEND_REPO || 'https://github.com/sub-store-org/Sub-Store-Front-End.git';
 const ref = process.env.FRONTEND_REF || '';
 const pnpmVersion = process.env.PNPM_VERSION || '11.0.9';
@@ -14,23 +15,49 @@ function run(command, args, cwd = root) {
   execFileSync(command, args, { cwd, stdio: 'inherit', env: { ...process.env } });
 }
 
+console.log('🧹 Cleaning up previous builds...');
 rmSync(checkout, { recursive: true, force: true });
 rmSync(output, { recursive: true, force: true });
+
+console.log(`📥 Cloning frontend repository: ${repo} ${ref ? `(branch: ${ref})` : ''}`);
 const cloneArgs = ['clone', '--depth', '1'];
 if (ref) cloneArgs.push('--branch', ref);
 cloneArgs.push(repo, checkout);
 run('git', cloneArgs);
+
+console.log('📦 Installing dependencies...');
 run('corepack', ['enable']);
 run('corepack', ['prepare', `pnpm@${pnpmVersion}`, '--activate']);
 run('pnpm', ['install', '--frozen-lockfile'], checkout);
-run('pnpm', ['build'], checkout);
+
+console.log('🏗️ Building frontend with VITE_API_URL=/ ...');
+// 【关键修复】在构建时注入环境变量 VITE_API_URL=/
+// 这样前端会使用 window.location.origin 作为后端地址，适配 Cloudflare Workers 部署
+execFileSync(
+  'pnpm',
+  ['build'],
+  {
+    cwd: checkout,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      VITE_API_URL: '/',
+    },
+  }
+);
 
 const dist = resolve(checkout, 'dist');
 if (!existsSync(dist)) throw new Error('Official frontend build did not produce dist/');
+
+console.log('📂 Copying build artifacts...');
 mkdirSync(output, { recursive: true });
 cpSync(dist, output, { recursive: true });
 
 let sha = '';
-try { sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(); } catch {}
+try { 
+  sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(); 
+} catch {}
+
 writeFileSync(resolve(output, '.upstream-frontend-sha'), `${sha}\n`);
-console.log(`Official frontend ${sha || 'default-branch'} synced to ${output}`);
+console.log(`✅ Official frontend ${sha || 'default-branch'} synced to ${output}`);
+console.log(`ℹ️  API URL configured as: / (will resolve to window.location.origin)`);

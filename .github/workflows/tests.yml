@@ -3,29 +3,91 @@ name: Tests
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "11.0.9"
+
 jobs:
   worker:
+    name: Frontend + Worker Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
+      # ============================================================
+      # 1. Checkout
+      # ============================================================
+      - name: Checkout
+        uses: actions/checkout@v5
         with:
-          node-version: 22
+          fetch-depth: 0
 
+      # ============================================================
+      # 2. Node
+      # ============================================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # ============================================================
+      # 3. Corepack / pnpm
+      # ============================================================
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@${PNPM_VERSION} --activate
+
+      # ============================================================
+      # 4. Sync official frontend
+      # ============================================================
+      - name: Sync and build official Sub-Store Front-End
+        run: |
+          node scripts/sync-official-frontend.mjs
+
+      # ============================================================
+      # 5. Verify frontend assets
+      # ============================================================
+      - name: Verify frontend
+        run: |
+          test -d frontend-dist
+          test -f frontend-dist/index.html
+
+          echo "Frontend build verified:"
+          find frontend-dist -maxdepth 2 -type f | head -100
+
+      # ============================================================
+      # 6. Install Worker dependencies
+      # ============================================================
       - name: Install Worker dependencies
         working-directory: worker
         run: npm install
 
+      # ============================================================
+      # 7. Generate Worker types
+      # ============================================================
+      - name: Generate Worker types
+        working-directory: worker
+        run: npx wrangler types
+
+      # ============================================================
+      # 8. Typecheck
+      # ============================================================
       - name: Typecheck
         working-directory: worker
         run: npm run typecheck
 
+      # ============================================================
+      # 9. Local Worker contract tests
+      # ============================================================
       - name: Run Worker contract tests
-        run: node scripts/test-worker.mjs
+        run: |
+          node scripts/test-worker.mjs
